@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Environment — contains agent URL, never commit
+.env
+.env.local
+
+# Runtime data written by the UI — user-specific, not source code
+storage/
