@@ -10,6 +10,7 @@ import os
 from typing import Optional
 
 import requests
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -18,11 +19,22 @@ _BASE_URL = os.environ.get("AGENT_API_URL", "http://localhost:8000").rstrip("/")
 
 _TIMEOUT = int(os.environ.get("AGENT_API_TIMEOUT", "300"))
 
+# Only initialise Azure auth when the URL points at Azure (not localhost).
+_azure_token_provider = None
+if not _BASE_URL.startswith("http://localhost") and not _BASE_URL.startswith("http://127."):
+    _credential = DefaultAzureCredential()
+    _azure_token_provider = get_bearer_token_provider(
+        _credential, "https://ai.azure.com/.default"
+    )
+
 
 def _post(path: str, payload: dict) -> dict:
     url = f"{_BASE_URL}{path}"
+    headers: dict = {}
+    if _azure_token_provider:
+        headers["Authorization"] = f"Bearer {_azure_token_provider()}"
     try:
-        resp = requests.post(url, json=payload, timeout=_TIMEOUT)
+        resp = requests.post(url, json=payload, headers=headers, timeout=_TIMEOUT)
         resp.raise_for_status()
         return resp.json()
     except requests.exceptions.ConnectionError:
