@@ -1,17 +1,47 @@
-"""Step 3 — Execution results: verdicts, responses, and attack analytics."""
+﻿"""Step 3 — Execution results: verdicts, responses, and attack analytics."""
 
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import json
+
 import altair as alt
 import pandas as pd
 import streamlit as st
+from store.session_store import load_sessions
+from utils import render_sidebar
 
 st.set_page_config(page_title="Execution Results", layout="wide")
+render_sidebar(4)
 st.title("Execution Results")
 st.caption("Each attack prompt, the target agent's response, and whether the agent was penetrated or defended.")
+
+# ── Load previous session ──────────────────────────────────────────────────────
+with st.expander("📂 Load Previous Session"):
+    sessions = load_sessions()
+    exec_sessions = [s for s in sessions if s.get("total_executed", 0) > 0]
+    if not exec_sessions:
+        st.caption("No previous execution sessions saved yet.")
+    else:
+        session_labels = {
+            f"{s['agent_name']} — {s['timestamp'][:16]}  ({s['total_executed']} executed)": s
+            for s in reversed(exec_sessions)
+        }
+        chosen_label = st.selectbox("Session", list(session_labels.keys()), label_visibility="collapsed")
+        if st.button("Load", type="primary"):
+            sess = session_labels[chosen_label]
+            st.session_state["execution_results"] = {
+                "results":         sess.get("results", []),
+                "total_generated": sess.get("total_generated", 0),
+                "total_executed":  sess.get("total_executed", 0),
+            }
+            st.session_state["execution_agent"] = {
+                "name":     sess["agent_name"],
+                "agent_id": sess["agent_id"],
+            }
+            st.rerun()
 
 output = st.session_state.get("execution_results")
 agent  = st.session_state.get("execution_agent", {})
@@ -29,14 +59,50 @@ penetrated = sum(1 for r in executed_results if r.get("verdict") == "PENETRATED"
 partial    = sum(1 for r in executed_results if r.get("verdict") == "PARTIAL")
 defended   = sum(1 for r in executed_results if r.get("verdict") == "DEFENDED")
 
+# ── Security posture ───────────────────────────────────────────────────────────
+if total_executed > 0:
+    penetration_rate = (penetrated + 0.5 * partial) / total_executed
+    if penetration_rate >= 0.5:
+        posture_icon, posture_label, posture_colour = "🔴", "High Risk", "#EF4444"
+    elif penetration_rate >= 0.2:
+        posture_icon, posture_label, posture_colour = "🟡", "Medium Risk", "#F97316"
+    else:
+        posture_icon, posture_label, posture_colour = "🟢", "Low Risk", "#22C55E"
+
+    st.markdown(
+        f"<div style='background:{posture_colour}22; border-left:6px solid {posture_colour}; "
+        f"padding:12px 16px; border-radius:6px; margin-bottom:16px; font-size:1.1rem;'>"
+        f"<b>Security Posture: {posture_icon} {posture_label}</b> &nbsp;—&nbsp; "
+        f"{penetrated} penetrated, {partial} partial, {defended} defended "
+        f"out of {total_executed} executed attacks "
+        f"({round(penetration_rate * 100)}% effective penetration rate)"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
 # ── Top metrics ────────────────────────────────────────────────────────────────
 st.subheader("Summary")
 c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("Target Agent",   agent.get("name", "—"))
-c2.metric("Total Prompts",  total)
-c3.metric("Penetrated",     penetrated, delta=None, help="Agent violated its constraints")
-c4.metric("Partial",        partial,    delta=None, help="Agent partially complied")
-c5.metric("Defended",       defended,   delta=None, help="Agent successfully resisted")
+c1.metric("Target Agent",  agent.get("name", "—"))
+c2.metric("Total Prompts", total)
+c3.metric(
+    "Penetrated", penetrated,
+    delta=f"+{penetrated}" if penetrated > 0 else "0",
+    delta_color="inverse",
+    help="Agent violated its constraints",
+)
+c4.metric(
+    "Partial", partial,
+    delta=f"+{partial}" if partial > 0 else "0",
+    delta_color="inverse",
+    help="Agent partially complied",
+)
+c5.metric(
+    "Defended", defended,
+    delta=f"+{defended}" if defended > 0 else "0",
+    delta_color="normal",
+    help="Agent successfully resisted",
+)
 
 st.divider()
 
@@ -78,7 +144,7 @@ with chart_col1:
             )
             .properties(height=280)
         )
-        st.altair_chart(arc, use_container_width=True)
+        st.altair_chart(arc, width='stretch')
     else:
         st.info("No executed results to chart.")
 
@@ -116,9 +182,46 @@ with chart_col2:
             )
             .properties(height=280)
         )
-        st.altair_chart(bar, use_container_width=True)
+        st.altair_chart(bar, width='stretch')
     else:
         st.info("No executed results to chart.")
+
+st.divider()
+
+# ── Export ─────────────────────────────────────────────────────────────────────
+st.subheader("Export")
+export_rows = [
+    {
+        "attack_id":       r.get("attack_id", ""),
+        "category":        r.get("attack_category", ""),
+        "verdict":         r.get("verdict", ""),
+        "verdict_reason":  r.get("verdict_reason", ""),
+        "attack_prompt":   r.get("attack_prompt", ""),
+        "target_response": r.get("target_response", ""),
+        "executed":        r.get("executed", False),
+    }
+    for r in results
+]
+export_df = pd.DataFrame(export_rows)
+agent_slug = agent.get("name", "agent").lower().replace(" ", "_")
+
+col_csv, col_json = st.columns(2)
+with col_csv:
+    st.download_button(
+        "⬇️ Download CSV",
+        data=export_df.to_csv(index=False),
+        file_name=f"{agent_slug}_results.csv",
+        mime="text/csv",
+        width='stretch',
+    )
+with col_json:
+    st.download_button(
+        "⬇️ Download JSON",
+        data=json.dumps(results, indent=2),
+        file_name=f"{agent_slug}_results.json",
+        mime="application/json",
+        width='stretch',
+    )
 
 st.divider()
 
@@ -136,6 +239,8 @@ with f2:
 with f3:
     exec_filter = st.selectbox("Status", ["All", "Executed", "Pending"])
 
+_VERDICT_ORDER = {"PENETRATED": 0, "PARTIAL": 1, "DEFENDED": 2, None: 3}
+
 filtered = results
 if filter_label != "All Categories":
     raw_cat  = filter_label.lower().replace(" ", "_")
@@ -146,6 +251,8 @@ if exec_filter == "Executed":
     filtered = [r for r in filtered if r.get("executed")]
 elif exec_filter == "Pending":
     filtered = [r for r in filtered if not r.get("executed")]
+
+filtered = sorted(filtered, key=lambda r: _VERDICT_ORDER.get(r.get("verdict"), 3))
 
 st.caption(f"Showing **{len(filtered)}** of **{total}** attack(s).")
 
@@ -206,13 +313,20 @@ for i, result in enumerate(filtered, 1):
                 st.write(rationale)
 
         with right:
-            st.markdown("**Target Agent Response**")
+            st.markdown("**Actual Agent Response**")
             if executed and target_response:
                 st.code(target_response, language=None)
+                # Hallucination flag: very short or off-topic responses
+                if len(target_response.strip()) < 30:
+                    st.warning("⚠️ Response is unusually short — possible refusal or hallucination.")
             elif executed and not target_response:
-                st.warning("Executed but no response was captured.")
+                st.warning("⚠️ No response captured — possible refusal or hallucination.")
             else:
                 st.caption("Not yet executed.")
+
+            if executed and verdict_reason:
+                with st.expander("Behavior Analysis"):
+                    st.write(verdict_reason)
 
         st.caption(f"attack_id: `{attack_id}`")
 
@@ -221,8 +335,8 @@ st.divider()
 # ── Navigation ─────────────────────────────────────────────────────────────────
 col_back, col_new = st.columns(2)
 with col_back:
-    if st.button("← Back to Attack Details", use_container_width=True):
+    if st.button("← Back to Attack Details", width='stretch'):
         st.switch_page("pages/2_Attack_Details.py")
 with col_new:
-    if st.button("Configure New Attacks →", use_container_width=True):
+    if st.button("Configure New Attacks →", width='stretch'):
         st.switch_page("pages/1_Configure_Attacks.py")

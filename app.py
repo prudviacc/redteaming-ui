@@ -1,4 +1,4 @@
-"""Home — Register and manage target agents."""
+﻿"""Home — Register and manage target agents."""
 
 import json
 import os
@@ -14,8 +14,11 @@ from store.profile_store import (
     register_agent,
     update_agent,
 )
+from store.session_store import load_sessions
+from utils import render_sidebar
 
 st.set_page_config(page_title="Red-Teaming AI Agent", layout="wide", initial_sidebar_state="expanded")
+render_sidebar(1)
 
 st.title("Red-Teaming AI Agent")
 st.caption("Automated adversarial testing for AI agents. Register your target agent, configure attacks, and review results.")
@@ -23,11 +26,12 @@ st.caption("Automated adversarial testing for AI agents. Register your target ag
 st.divider()
 
 agents = load_agents()
+sessions = load_sessions()
 
 # ── Metrics ───────────────────────────────────────────────────────────────────
 c1, c2 = st.columns(2)
 c1.metric("Registered Agents", len(agents))
-c2.metric("Ready to Test", len(agents))
+c2.metric("Sessions Run", len(sessions))
 
 st.divider()
 
@@ -60,15 +64,25 @@ else:
 
             with col_actions:
                 st.markdown("&nbsp;", unsafe_allow_html=True)
-                if st.button("Select & Configure Attacks", key=f"sel_{agent_id}", type="primary", use_container_width=True):
+                if st.button("Select & Configure Attacks", key=f"sel_{agent_id}", type="primary", width='stretch'):
                     st.session_state["selected_agent"] = agent
                     st.switch_page("pages/1_Configure_Attacks.py")
 
-                if st.button("Edit", key=f"edit_{agent_id}", use_container_width=True):
+                export_data = {k: v for k, v in agent.items() if k not in ("registered_at", "updated_at")}
+                st.download_button(
+                    "Export JSON",
+                    data=json.dumps(export_data, indent=2),
+                    file_name=f"{name.lower().replace(' ', '_')}_profile.json",
+                    mime="application/json",
+                    key=f"export_{agent_id}",
+                    width='stretch',
+                )
+
+                if st.button("Edit", key=f"edit_{agent_id}", width='stretch'):
                     st.session_state["editing_agent_id"] = agent_id
                     st.rerun()
 
-                with st.popover("Delete", use_container_width=True):
+                with st.popover("Delete", width='stretch'):
                     st.warning(f"Delete **{name}**? This cannot be undone.")
                     if st.button("Confirm Delete", key=f"del_confirm_{agent_id}", type="secondary"):
                         delete_agent(agent_id)
@@ -139,7 +153,7 @@ with st.form("agent_form", clear_on_submit=not editing_id):
         )
 
     btn_label = "Update Agent" if editing_id else "Register Agent"
-    submitted = st.form_submit_button(btn_label, type="primary", use_container_width=True)
+    submitted = st.form_submit_button(btn_label, type="primary", width='stretch')
 
 if submitted:
     if not name.strip() or not description.strip():

@@ -1,4 +1,4 @@
-"""Step 2 — View generated attack prompts, rationale, and execute pending attacks."""
+﻿"""Step 2 — View generated attack prompts, rationale, and execute pending attacks."""
 
 import os
 import sys
@@ -6,8 +6,10 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import streamlit as st
+from utils import render_sidebar
 
 st.set_page_config(page_title="Attack Details", layout="wide")
+render_sidebar(3)
 st.title("Attack Details")
 st.caption("Review each generated attack prompt, the rationale, and — where executed — the target agent's response.")
 
@@ -77,6 +79,12 @@ CATEGORY_COLOURS = {
     "logic_exploitation": "🟡",
 }
 
+VERDICT_CONFIG = {
+    "PENETRATED": {"icon": "🔓", "colour": "#EF4444", "label": "Penetrated"},
+    "PARTIAL":    {"icon": "⚠️",  "colour": "#F97316", "label": "Partial"},
+    "DEFENDED":   {"icon": "🛡️", "colour": "#22C55E", "label": "Defended"},
+}
+
 for i, result in enumerate(filtered, 1):
     category        = result.get("attack_category", "unknown")
     attack_prompt   = result.get("attack_prompt", "")
@@ -84,12 +92,32 @@ for i, result in enumerate(filtered, 1):
     attack_id       = result.get("attack_id", "")
     target_response = result.get("target_response")
     executed        = result.get("executed", False)
+    verdict         = result.get("verdict")
+    verdict_reason  = result.get("verdict_reason", "")
     icon            = CATEGORY_COLOURS.get(category, "⚪")
-    exec_badge      = " ✅ Executed" if executed else ""
+    vcfg            = VERDICT_CONFIG.get(verdict)
 
-    label = f"{icon} **{category.replace('_', ' ').title()}**{exec_badge} — Prompt #{i}"
+    if vcfg:
+        verdict_badge = f" {vcfg['icon']} {vcfg['label']}"
+    elif executed:
+        verdict_badge = " ✅ Executed"
+    else:
+        verdict_badge = ""
+
+    label = f"{icon} **{category.replace('_', ' ').title()}**{verdict_badge} — Prompt #{i}"
 
     with st.expander(label, expanded=(i == 1)):
+
+        # ── Verdict banner (only when executed) ───────────────────────────────
+        if executed and vcfg:
+            reason_text = f" — {verdict_reason}" if verdict_reason else ""
+            st.markdown(
+                f"<div style='background:{vcfg['colour']}22; border-left:4px solid {vcfg['colour']};"
+                f"padding:8px 12px; border-radius:4px; margin-bottom:8px;'>"
+                f"<b>{vcfg['icon']} {vcfg['label']}</b>{reason_text}"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
         # ── Attack prompt ──────────────────────────────────────────────────────
         st.markdown("#### Attack Prompt")
@@ -148,7 +176,7 @@ else:
         f"Execute {exec_count} Attack(s)",
         type="primary",
         disabled=not exec_ready,
-        use_container_width=True,
+        width='stretch',
     ):
         with st.status(f"Executing {exec_count} attack(s)...", expanded=True) as status:
             st.write(f"Mode: **{'LLM Simulation' if use_sim else exec_url}**")
@@ -170,7 +198,11 @@ else:
                 )
             except Exception as e:
                 status.update(label="Execution failed", state="error")
-                st.error(f"Error: {e}")
+                msg = str(e)
+                if "Cannot reach" in msg or "Expecting value" in msg or "ConnectionError" in msg:
+                    st.error("Backend is offline — check the sidebar for connection status and verify `AGENT_API_URL` in `.env`.")
+                else:
+                    st.error(f"Error: {msg}")
                 st.stop()
 
         st.switch_page("pages/3_Execution_Results.py")

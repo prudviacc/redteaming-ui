@@ -53,6 +53,7 @@ def generate_attacks(
     execute: bool = False,
     target_url: Optional[str] = None,
     use_simulation: bool = True,
+    target_config: Optional[dict] = None,
 ) -> dict:
     """
     Ask the agent to generate attack prompts (and optionally execute them).
@@ -60,13 +61,16 @@ def generate_attacks(
     Returns:
         {"results": [...], "total_generated": int, "total_executed": int}
     """
-    return _post("/generate", {
-        "agent_profile": agent_profile,
-        "attack_plan": attack_plan,
-        "execute": execute,
-        "target_url": target_url,
+    payload = {
+        "agent_profile":  agent_profile,
+        "attack_plan":    attack_plan,
+        "execute":        execute,
+        "target_url":     target_url,
         "use_simulation": use_simulation,
-    })
+    }
+    if target_config:
+        payload["target"] = target_config
+    return _post("/generate", payload)
 
 
 def execute_attacks(
@@ -74,6 +78,7 @@ def execute_attacks(
     agent_profile: dict,
     use_simulation: bool = True,
     target_url: Optional[str] = None,
+    target_config: Optional[dict] = None,
 ) -> dict:
     """
     Execute a set of already-generated (unexecuted) attack prompts.
@@ -81,9 +86,12 @@ def execute_attacks(
     Returns:
         {"results": [...], "total_generated": int, "total_executed": int}
     """
-    return _post("/execute", {
-        "agent_profile": agent_profile,
+    payload = {
+        "agent_profile":    agent_profile,
         "existing_results": existing_results,
-        "target_url": target_url,
-        "use_simulation": use_simulation,
-    })
+        "target_url":       target_url,
+        "use_simulation":   use_simulation,
+    }
+    if target_config:
+        payload["target"] = target_config
+    return _post("/execute", payload)
