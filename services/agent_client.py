@@ -21,7 +21,7 @@ _TIMEOUT = int(os.environ.get("AGENT_API_TIMEOUT", "300"))
 
 # Only initialise Azure auth when the URL points at Azure (not localhost).
 _azure_token_provider = None
-if not _BASE_URL.startswith("http://localhost") and not _BASE_URL.startswith("http://127."):
+if "ai.azure.com" in _BASE_URL:
     _credential = DefaultAzureCredential()
     _azure_token_provider = get_bearer_token_provider(
         _credential, "https://ai.azure.com/.default"

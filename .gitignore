@@ -5,9 +5,16 @@ __pycache__/
 .venv/
 venv/
 
+# IDE
+.vscode/
+
 # Environment — contains agent URL, never commit
 .env
 .env.local
 
 # Runtime data written by the UI — user-specific, not source code
 storage/
+
+# Local copies with deployment URLs and resource names — never commit
+README.local.md
+DEPLOYMENT.local.md
